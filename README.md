@@ -1,4 +1,4 @@
-# Interview Co-Pilot Application
+# Co-Pilot Application
 
 ## Setup
 1. Copy `.env.example` to `.env` in `server/` and fill in secrets.

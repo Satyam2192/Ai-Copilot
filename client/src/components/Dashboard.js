@@ -15,6 +15,24 @@ export default function Dashboard({ user, onLogout }) {
   const [sessionError, setSessionError] = useState(null);
   const [isHistoryVisible, setIsHistoryVisible] = useState(false); // Default to hidden
   const [isHeaderVisible, setIsHeaderVisible] = useState(true); // State for header visibility
+  const [panelDirection, setPanelDirection] = useState('horizontal'); // State for panel direction
+
+  // Effect to handle responsive panel direction
+  useEffect(() => {
+    const checkSize = () => {
+      // Tailwind's 'md' breakpoint is 768px
+      setPanelDirection(window.innerWidth < 768 ? 'vertical' : 'horizontal');
+    };
+
+    // Initial check
+    checkSize();
+
+    // Add listener
+    window.addEventListener('resize', checkSize);
+
+    // Cleanup listener
+    return () => window.removeEventListener('resize', checkSize);
+  }, []); // Empty dependency array ensures this runs only on mount and unmount
 
   // Fetch sessions function
   const fetchSessions = async () => {
@@ -105,13 +123,13 @@ export default function Dashboard({ user, onLogout }) {
 
         {/* Conditionally Rendered Header Content */}
         {isHeaderVisible && (
-          <div className="flex justify-between items-center"> {/* Existing content wrapper */}
+          <div className="flex flex-col space-y-2 sm:flex-row sm:space-y-0 sm:justify-between sm:items-center"> {/* Responsive flex layout */}
             {/* Removed History Toggle Button from here */}
             <div className="flex items-center"> {/* Group title */}
-              <h1 className="text-xl font-bold ml-2">Interview Co-Pilot</h1> {/* Added margin-left */}
+              <h1 className="text-xl font-bold ml-2">Co-Pilot</h1> {/* Added margin-left */}
             </div>
-            <div className="flex items-center">
-              <span className="mr-4 text-gray-300">{user.email}</span>
+            <div className="flex flex-col items-start space-y-2 sm:flex-row sm:items-center sm:space-y-0"> {/* Responsive user/logout */}
+              <span className="sm:mr-4 text-gray-300">{user.email}</span>
               <button
                 onClick={handleLogout}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded focus:outline-none focus:shadow-outline"
@@ -146,7 +164,8 @@ export default function Dashboard({ user, onLogout }) {
 
         {/* Left Sidebar - Session List (Conditionally Rendered) */}
         {isHistoryVisible && (
-          <aside className="w-64 bg-gray-800 p-4 flex-shrink-0 overflow-y-auto border-r border-gray-700 transition-all duration-300 ease-in-out"> {/* Added transition */}
+          <aside className="w-full sm:w-64 bg-gray-800 p-4 flex-shrink-0 overflow-y-auto border-r border-gray-700 transition-all duration-300 ease-in-out z-30"> {/* Responsive width, added z-index */}
+            {/* Consider adding absolute positioning for overlay effect on small screens if needed */}
             <button
               onClick={() => setSelectedSessionId(null)} // Start new chat
               className="w-full mb-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded focus:outline-none focus:shadow-outline transition-colors"
@@ -192,10 +211,11 @@ export default function Dashboard({ user, onLogout }) {
         )}
 
         {/* Resizable Panel Group for Chat and Response */}
-        <PanelGroup direction="horizontal" className="flex-grow"> {/* PanelGroup takes flex-grow */}
+        {/* Bind direction to state */}
+        <PanelGroup direction={panelDirection} className="flex-grow"> {/* PanelGroup takes flex-grow */}
           {/* Center Panel - Conversation Area */}
-          <Panel defaultSize={65} minSize={30}> {/* Set default and min size */}
-            <div className="h-full p-4 overflow-y-auto bg-gray-900"> {/* Use h-full */}
+          <Panel defaultSize={65} minSize={30} className="flex flex-col"> {/* Ensure panel takes space */}
+            <div className="flex-grow p-4 overflow-y-auto bg-gray-900"> {/* Use flex-grow */}
               {/* Use key to force re-mount when session changes */}
               <Chat
                 key={selectedSessionId || 'new'} // Key prop
@@ -206,15 +226,17 @@ export default function Dashboard({ user, onLogout }) {
             </div>
           </Panel>
 
-          {/* Resize Handle */}
-          <PanelResizeHandle className="w-2 bg-gray-700 hover:bg-blue-600 active:bg-blue-700 transition-colors flex items-center justify-center">
-            {/* Optional: Add visual indicator like dots */}
-            <div className="w-1 h-8 bg-gray-500 rounded-full"></div>
+          {/* Resize Handle - Conditionally apply classes based on direction state */}
+          <PanelResizeHandle className={`bg-gray-700 hover:bg-blue-600 active:bg-blue-700 transition-colors flex items-center justify-center ${panelDirection === 'vertical' ? 'h-2 w-full' : 'w-2 h-full'}`}>
+            {/* Visual indicator - adjust based on direction */}
+            <div className={`bg-gray-500 rounded-full ${panelDirection === 'vertical' ? 'h-1 w-8' : 'w-1 h-8'}`}></div>
           </PanelResizeHandle>
 
           {/* Right Panel - Display the latest response */}
-          <Panel defaultSize={35} minSize={20}> {/* Set default and min size */}
-            <aside className="h-full bg-gray-800 p-4 overflow-y-auto border-l border-gray-700"> {/* Use h-full, remove fixed width */}
+          {/* Consider hiding this panel on small screens if vertical split is too cramped: hidden md:flex */}
+          <Panel defaultSize={35} minSize={20} className="flex flex-col"> {/* Ensure panel takes space */}
+            {/* Conditionally apply border based on direction */}
+            <aside className={`flex-grow bg-gray-800 p-4 overflow-y-auto border-gray-700 ${panelDirection === 'vertical' ? 'border-t' : 'border-l'}`}>
               <h2 className="text-xl font-bold mb-4">Latest AI Response</h2>
               <div className="bg-gray-700 p-4 rounded text-gray-200 text-sm whitespace-pre-wrap min-h-[100px]">
                 {latestAiResponse ? latestAiResponse : (

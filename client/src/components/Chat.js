@@ -363,10 +363,10 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-800 rounded-lg shadow-lg p-4">
+    <div className="flex flex-col h-full bg-gray-800 rounded-lg shadow-lg p-2 sm:p-4"> {/* Responsive padding */}
       {/* Header Area */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 className="text-xl font-bold text-white">Interview Assistant</h2>
+        <h2 className="text-xl font-bold text-white">Assistant</h2>
         {/* Model Selector Dropdown */}
         <div className="flex items-center space-x-2">
            <label htmlFor="model-select" className="text-sm text-gray-300">Model:</label>

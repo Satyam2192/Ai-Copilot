@@ -22,7 +22,7 @@ export default function Login({ toggleForm }) {
   };
 
   return (
-    <form onSubmit={submit} className="p-6 max-w-sm mx-auto bg-gray-800 rounded-lg shadow-md">
+    <form onSubmit={submit} className="w-full p-4 sm:p-6 sm:max-w-sm sm:mx-auto bg-gray-800 rounded-lg shadow-md">
       <h2 className="text-2xl font-bold mb-6 text-center text-white">Login</h2>
       {/* Display error from Redux state */}
       {error && <p className="text-red-500 text-center mb-4">{typeof error === 'string' ? error : 'Login failed'}</p>}

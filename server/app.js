@@ -20,12 +20,15 @@ connectDB();
 // Initialize WebSocket server
 initWebSocketServer(server);
 
-// Configure CORS more explicitly
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000', // Be more specific in production
+  origin: [
+    'http://localhost:3000',
+    'https://aicopilot-peach.vercel.app',
+    'http://192.168.1.7:3000'
+  ],
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization'], // Allow Authorization header
-  exposedHeaders: ['x-auth-token'] // Expose custom header for client interceptor
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['x-auth-token'] 
 }));
 
 app.use(express.json());

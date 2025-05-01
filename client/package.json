@@ -8,6 +8,7 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-redux": "^9.2.0",
+    "react-resizable-panels": "^2.1.9",
     "react-speech-recognition": "^3.10.0",
     "socket.io-client": "^4.6.0"
   },

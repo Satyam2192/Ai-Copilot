@@ -1,14 +1,17 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../../services/api'; // Use the configured axios instance
+// Import specific API functions - removed apiLogout
+import { login, register, checkAuth } from '../../services/api'; 
 
 // Async thunk for user login
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async (credentials, { rejectWithValue }) => {
     try {
-      const response = await api.post('/api/login', credentials);
-      // Token is automatically handled by the axios interceptor (stores in localStorage)
-      return response.data.user; // Return user data on success
+      // Use the imported login function
+      const response = await login(credentials); 
+      // Token is automatically handled by the axios interceptor
+      // Ensure the login API returns { user: ..., token: ... } or similar
+      return response.data.user; 
     } catch (error) {
       const message =
         (error.response && error.response.data && (error.response.data.message || error.response.data)) ||
@@ -24,10 +27,11 @@ export const registerUser = createAsyncThunk(
   'auth/registerUser',
   async (credentials, { rejectWithValue }) => {
     try {
-      // Assuming the register endpoint also returns user data and sets token/header
-      const response = await api.post('/api/register', credentials);
-      // Token handling should be consistent with login (via interceptor)
-      return response.data.user; // Return user data on success
+      // Use the imported register function
+      const response = await register(credentials);
+      // Token handling via interceptor
+      // Ensure the register API returns { user: ..., token: ... } or similar
+      return response.data.user; 
     } catch (error) {
       const message =
         (error.response && error.response.data && (error.response.data.message || error.response.data)) ||
@@ -47,12 +51,14 @@ export const loadUser = createAsyncThunk(
     if (!token) {
       return rejectWithValue('No token found');
     }
-    // No need to manually set header, axios interceptor does this
+    // Interceptor handles the token header
     try {
-      const response = await api.get('/api/user/profile');
-      return response.data.user;
+      // Use the imported checkAuth function (ensure endpoint matches in api.js)
+      const response = await checkAuth(); 
+      // Ensure the checkAuth API returns { user: ... }
+      return response.data.user; 
     } catch (error) {
-      // If token is invalid/expired, the API call will fail (e.g., 401/403)
+      // If token is invalid/expired, the API call will fail
       localStorage.removeItem('token'); // Clear invalid token
       const message =
         (error.response && error.response.data && (error.response.data.message || error.response.data)) ||
@@ -63,14 +69,27 @@ export const loadUser = createAsyncThunk(
   }
 );
 
-// Simple action for logout (can be expanded if API call is needed)
+// Async thunk for logout, calling the API endpoint
 export const logoutUser = createAsyncThunk(
     'auth/logoutUser',
-    async (_, { dispatch }) => {
-        localStorage.removeItem('token');
-        // Optionally dispatch other actions if needed upon logout
-        // e.g., dispatch(resetChatState());
-        return null; // Indicate logout success
+    async (_, { rejectWithValue }) => {
+        try {
+            // Removed await apiLogout(); as there's no backend endpoint/API function
+            localStorage.removeItem('token');
+            return null; // Indicate logout success
+        } catch (error) {
+             // This catch block might be less relevant now without the API call,
+             // but we'll keep the token removal for safety.
+             localStorage.removeItem('token'); // Still clear token even if API fails
+             const message =
+                (error.response && error.response.data && (error.response.data.message || error.response.data)) ||
+                error.message ||
+                error.toString();
+             console.error('Logout API call failed:', message);
+             // Decide if this should be a hard failure or just log
+             // return rejectWithValue(message); 
+             return null; // Proceed with client-side logout anyway
+        }
     }
 );
 

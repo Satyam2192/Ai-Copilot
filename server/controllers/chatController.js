@@ -29,16 +29,16 @@ const formatLog = (level, module, message, metadata = {}) => {
 
 export async function handleChatMessage(req, res) {
   try {
-    // Destructure model from request body, provide a default
+    // Destructure request body - remove systemPrompt from here
     const { text, sessionId, questionId, model = 'gemini-1.5-flash' } = req.body;
     const userId = req.user.id;
-    const apiKey = process.env.API_Key; // Get API key from environment
+    const apiKey = process.env.API_Key;
 
     formatLog('INFO', 'handleChatMessage', 'Processing chat message', {
       userId,
       sessionId,
       questionId,
-      model, // Log the selected model
+      model,
       hasText: !!text
     });
 
@@ -54,12 +54,15 @@ export async function handleChatMessage(req, res) {
         return res.status(500).json({
           error: 'Server configuration error: API Key missing',
           code: 'MISSING_API_KEY'
-        });
+      });
     }
 
-    // Store user message in session
+    let session = null;
+    let sessionSystemPrompt = ''; // Default to empty
+
+    // Fetch session and store user message
     if (sessionId) {
-      await Session.findByIdAndUpdate(
+      session = await Session.findByIdAndUpdate(
         sessionId,
         {
           $push: {
@@ -70,18 +73,34 @@ export async function handleChatMessage(req, res) {
             }
           },
           $set: { lastActive: new Date() }
-        }
-      );
+        },
+        { new: true } // Return the updated document to get the prompt easily
+      ).lean(); // Use lean for performance if only reading prompt
+
+      if (session) {
+        sessionSystemPrompt = session.systemPrompt || ''; // Get prompt from fetched session
+        formatLog('INFO', 'handleChatMessage', 'Fetched session system prompt', { sessionId, hasSystemPrompt: !!sessionSystemPrompt });
+      } else {
+        formatLog('WARN', 'handleChatMessage', 'Session not found for storing message or getting prompt', { sessionId });
+        // Decide if this is an error or if chat can proceed without session context
+      }
+    } else {
+       formatLog('INFO', 'handleChatMessage', 'No sessionId provided, proceeding without session context.', { userId });
     }
+
 
     // --- Use Axios to call Google API ---
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    // Prepend system prompt (from session) to user text if available
+    const combinedText = sessionSystemPrompt ? `${sessionSystemPrompt}\n\n---\n\nUser: ${text}` : text;
+
     const requestBody = {
       contents: [{
-        role: 'user', // Assuming single-turn for now, adjust if history needed
-        parts: [{ text }]
+        // Role might not be strictly necessary for this endpoint, but parts is key
+        parts: [{ text: combinedText }] // Send combined text
       }]
-      // Add generationConfig here if needed (e.g., temperature, maxOutputTokens)
+      // Add generationConfig here if needed
       // generationConfig: { temperature: 0.7, maxOutputTokens: 1000 }
     };
 
@@ -141,8 +160,8 @@ export async function handleChatMessage(req, res) {
       responseLength: aiResponseText.length
     });
 
-    // Store AI response in session
-    if (sessionId) {
+    // Store AI response in session (check if session exists again, though it should if we updated it earlier)
+    if (sessionId && session) { // Ensure session object exists
       await Session.findByIdAndUpdate(
         sessionId,
         {

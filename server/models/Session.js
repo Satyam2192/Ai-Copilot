@@ -16,7 +16,11 @@ const SessionSchema = new mongoose.Schema({
     type: String,
     default: 'General Interview'
   },
-  startTime: { 
+  systemPrompt: {
+    type: String,
+    default: '' // Or null, depending on preference
+  },
+  startTime: {
     type: Date,
     default: Date.now
   },

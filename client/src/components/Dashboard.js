@@ -123,13 +123,13 @@ export default function Dashboard({ user, onLogout }) {
 
         {/* Conditionally Rendered Header Content */}
         {isHeaderVisible && (
-          <div className="flex flex-col space-y-2 sm:flex-row sm:space-y-0 sm:justify-between sm:items-center"> {/* Responsive flex layout */}
+          <div className="flex justify-between items-center sm:flex-row sm:space-y-0 "> {/* Responsive flex layout */}
             {/* Removed History Toggle Button from here */}
             <div className="flex items-center"> {/* Group title */}
               <h1 className="text-xl font-bold ml-2">Co-Pilot</h1> {/* Added margin-left */}
             </div>
             <div className="flex flex-col items-start space-y-2 sm:flex-row sm:items-center sm:space-y-0"> {/* Responsive user/logout */}
-              <span className="sm:mr-4 text-gray-300">{user.email}</span>
+              {/* <span className="sm:mr-4 text-gray-300">{user.email}</span> */}
               <button
                 onClick={handleLogout}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded focus:outline-none focus:shadow-outline"
@@ -215,7 +215,7 @@ export default function Dashboard({ user, onLogout }) {
         <PanelGroup direction={panelDirection} className="flex-grow"> {/* PanelGroup takes flex-grow */}
           {/* Center Panel - Conversation Area */}
           <Panel defaultSize={65} minSize={30} className="flex flex-col"> {/* Ensure panel takes space */}
-            <div className="flex-grow p-4 overflow-y-auto bg-gray-900"> {/* Use flex-grow */}
+            <div className="flex-grow overflow-y-auto bg-gray-900"> {/* Use flex-grow */}
               {/* Use key to force re-mount when session changes */}
               <Chat
                 key={selectedSessionId || 'new'} // Key prop

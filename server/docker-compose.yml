@@ -15,7 +15,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - REACT_APP_SOCKET_URL=http://localhost:5000
+      # Use Docker service name 'server' for internal container communication
+      - REACT_APP_SOCKET_URL=http://server:5000
   mongo:
     image: mongo:6
     volumes:

@@ -1,0 +1,24 @@
+version: '3.8'
+services:
+  server:
+    build: ./server
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/interview-copilot
+      - JWT_SECRET=${JWT_SECRET}
+      - GENAI_KEY=${GENAI_KEY}
+    depends_on:
+      - mongo
+  client:
+    build: ./client
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_SOCKET_URL=http://localhost:5000
+  mongo:
+    image: mongo:6
+    volumes:
+      - mongo-data:/data/db
+volumes:
+  mongo-data:

@@ -4,11 +4,11 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Copy environment variables
-COPY .env ./
+COPY .env.example .env
 
 # Install dependencies
-COPY package.json yarn.lock ./
-RUN yarn install --production
+COPY package.json package-lock.json ./
+RUN npm install --production
 
 # Copy application code
 COPY . .

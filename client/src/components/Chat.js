@@ -160,48 +160,69 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
         }
     }
     // Optional: Display interim transcript somewhere if needed
-    // console.log('Interim Transcript:', interimTranscript);
+     // console.log('Interim Transcript:', interimTranscript);
 
   }; // End of handleRecognitionResult
 
   const handleRecognitionError = useCallback((event) => {
-    console.error('Speech recognition error:', event.error);
-    setError(`Speech recognition error: ${event.error}`);
-    setIsRecording(false); // Stop recording state on error
+    console.error('Speech recognition error:', event.error, event.message);
+    let errorMessage = `Speech recognition error: ${event.error}`;
+    if (event.message) {
+        errorMessage += ` - ${event.message}`;
+    }
+    setError(errorMessage);
+
+    // Don't attempt to restart if the error is critical (e.g., permissions)
+    const criticalErrors = ['not-allowed', 'service-not-allowed', 'network', 'audio-capture'];
+    if (criticalErrors.includes(event.error)) {
+        console.log('Critical speech error, stopping recording state.');
+        setIsRecording(false); // Ensure recording state is off
+        isManuallyStoppingRef.current = true; // Prevent restart in onend
+    } else {
+        // For less critical errors, we might still allow onend to try restarting
+        // but ensure the visual state reflects it stopped for now.
+        setIsRecording(false);
+    }
   }, []); // No dependencies needed
 
   // End handler with restart logic for continuous listening
   const handleRecognitionEnd = useCallback(() => {
     console.log('Speech recognition ended.');
 
-    // Check if the stop was triggered manually by the user
+    // Check if this was a manual stop or critical error
     if (isManuallyStoppingRef.current) {
-        console.log('Manual stop detected, not restarting.');
-        isManuallyStoppingRef.current = false; // Reset the ref
-        // isRecording was already set to false in toggleRecording
-        return; // Don't proceed to restart logic
+        console.log('Manual stop or critical error detected in onend, not restarting.');
+        isManuallyStoppingRef.current = false; // Reset the flag
+        setIsRecording(false); // Ensure UI reflects the stop
+        return; // Explicitly stop here
     }
 
-    // If not a manual stop, and we still intend to record, restart it.
-    // Check isRecording state *before* potentially setting it false.
+    // If it wasn't a manual stop and the user still intends to record, restart immediately.
+    // This is crucial for mobile browsers that might stop recognition frequently.
     if (isRecording && recognitionRef.current) {
-        console.log('Unexpected end, attempting to restart recognition...');
+        console.log('Non-manual stop detected, attempting immediate restart...');
         try {
             recognitionRef.current.start();
-            // Keep isRecording as true
-        } catch(e) {
-            console.error("Error restarting recognition:", e);
-            setIsRecording(false); // Stop if restart fails
+            console.log('Recognition restarted immediately.');
+            // isRecording state remains true
+        } catch (e) {
+            console.error("Error restarting recognition immediately:", e);
+            // Check if the error is the specific 'already started' error
+            if (e.name === 'InvalidStateError') {
+                 console.warn("Restart attempt failed: Recognition was likely already running or starting.");
+                 // Don't set error or change isRecording state in this specific case
+            } else {
+                setError("Mic failed to restart. Please try toggling it off/on.");
+                setIsRecording(false); // Stop if restart fails for other reasons
+            }
         }
     } else {
-        // If it ended naturally and we didn't intend to record anymore,
-        // or if an error occurred (handled by onError), ensure state is false.
-        // This case might not be strictly necessary if onError always fires first,
-        // but it's safer to ensure the state is correct.
-        console.log('Recognition ended naturally or after error, ensuring isRecording is false.');
-        setIsRecording(false);
+        // If isRecording is false here, it means the user toggled it off
+        // between the start and end events, or it was handled by the manual stop check above.
+        console.log('Recognition ended, but isRecording is false. No restart needed.');
+        setIsRecording(false); // Ensure state is definitely false
     }
-  }, [isRecording]); // isRecording is needed to check if restart is intended
+  }, [isRecording]); // isRecording is the key dependency
 
   // Effect to attach/detach listeners
   useEffect(() => {
@@ -238,15 +259,20 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
       recognitionRef.current.stop();
       // handleRecognitionEnd will still fire, see the ref, and confirm state is false
     } else {
-      console.log('Starting recognition...');
-      setError(null); // Clear previous errors
-      try {
-          recognitionRef.current.start();
-          setIsRecording(true);
-      } catch(e) {
-          console.error("Error starting recognition:", e);
-          setError("Failed to start microphone. Check permissions.");
-          setIsRecording(false);
+      // Double-check state just before starting
+      if (!isRecording) {
+          console.log('Starting recognition...');
+          setError(null); // Clear previous errors
+          try {
+              recognitionRef.current.start();
+              setIsRecording(true); // Set state AFTER successful start attempt
+          } catch(e) {
+              console.error("Error starting recognition:", e);
+              setError("Failed to start microphone. Check permissions or if already active.");
+              setIsRecording(false); // Ensure state is false on error
+          }
+      } else {
+          console.warn("Attempted to start recognition when already recording.");
       }
     }
   };

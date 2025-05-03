@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { loginUser, resetAuthError } from '../features/auth/authSlice'; // Import Redux actions
+import { loginUser, resetAuthError } from '../features/auth/authSlice'; 
 
-// Remove onAuth from props
 export default function Login({ toggleForm }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const dispatch = useDispatch();
-  const { isLoading, error } = useSelector((state) => state.auth); // Get state from Redux
-
-  // Clear error when component mounts or toggleForm changes
+  const { isLoading, error } = useSelector((state) => state.auth); 
+  
   useEffect(() => {
     dispatch(resetAuthError());
   }, [dispatch, toggleForm]);

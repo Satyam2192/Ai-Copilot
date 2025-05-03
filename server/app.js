@@ -21,14 +21,16 @@ connectDB();
 initWebSocketServer(server);
 
 app.use(cors({
-  origin: '*',//[
-  //   'http://localhost:3000',
-  //   'https://aicopilot-peach.vercel.app',
-  //   'https://9287mcx4-3000.inc1.devtunnels.ms'
-  // ],
+  origin: [
+    'http://localhost:3000',
+    'https://aicopilot-peach.vercel.app',
+    'https://9287mcx4-3000.inc1.devtunnels.ms',
+    'exp://localhost:*', // Added for Expo development
+    'http://localhost:*' // Added for Expo web/other local development
+  ],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['x-auth-token'] 
+  exposedHeaders: ['x-auth-token']
 }));
 
 app.use(express.json());

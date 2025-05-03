@@ -21,11 +21,11 @@ connectDB();
 initWebSocketServer(server);
 
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'https://aicopilot-peach.vercel.app',
-    'https://9287mcx4-3000.inc1.devtunnels.ms'
-  ],
+  origin: '*',//[
+  //   'http://localhost:3000',
+  //   'https://aicopilot-peach.vercel.app',
+  //   'https://9287mcx4-3000.inc1.devtunnels.ms'
+  // ],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['x-auth-token'] 

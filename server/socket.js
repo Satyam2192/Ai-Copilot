@@ -8,6 +8,7 @@ export const initWebSocketServer = (server) => {
   wss.on('connection', (socket) => {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] New client connected. Total clients: ${wss.clients.size}`);
+    socket.chatId = null; 
     
     socket.on('message', (message) => {
       try {
@@ -15,19 +16,24 @@ export const initWebSocketServer = (server) => {
         const data = JSON.parse(message.toString());
         console.log(`[${timestamp}] Raw message received: ${message.toString()}`);
         console.log(`[${timestamp}] Parsed message:`, data);
+
+        if (data.chatId && !socket.chatId) {
+          socket.chatId = data.chatId;
+          console.log(`[${timestamp}] Client associated with chatId: ${socket.chatId}`);
+        }
         
-        // Broadcast message to all clients
         const response = {
           type: 'response',
           timestamp,
           data: data.text,
-          clientCount: wss.clients.size
+          chatId: data.chatId, 
+          sender: data.sender 
         };
         
         wss.clients.forEach((client) => {
-          if (client.readyState === WebSocketServer.OPEN) {
+          if (client.readyState === WebSocketServer.OPEN && client.chatId === data.chatId) {
             client.send(JSON.stringify(response));
-            console.log(`[${timestamp}] Message broadcasted to ${wss.clients.size} clients`);
+            console.log(`[${timestamp}] Message broadcasted to clients in chat ${data.chatId}`);
           }
         });
       } catch (error) {

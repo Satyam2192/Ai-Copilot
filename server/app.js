@@ -25,8 +25,8 @@ app.use(cors({
     'http://localhost:3000',
     'https://aicopilot-peach.vercel.app',
     'https://9287mcx4-3000.inc1.devtunnels.ms',
-    'exp://localhost:*', // Added for Expo development
-    'http://localhost:*' // Added for Expo web/other local development
+    'exp://localhost:*', 
+    'http://localhost:*' 
   ],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization'],

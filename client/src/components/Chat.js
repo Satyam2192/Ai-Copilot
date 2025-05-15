@@ -224,14 +224,10 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
   useEffect(() => {
     console.log('[WebSocket Effect] Running. SessionId:', sessionId, 'User ID:', user?._id);
     if (sessionId && user?._id) {
-      // Dynamically determine WebSocket URL based on current window location
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      let wsHost = window.location.hostname;
-      // If running locally with a different port for API, use port 5000
-      const wsPort = window.location.hostname === 'localhost' ? ':5000' : (window.location.port ? `:${window.location.port}` : '');
-      const wsUrl = `${protocol}//${wsHost}${wsPort}`;
+      // Use REACT_APP_SOCKET_URL environment variable if available, otherwise default to the production WebSocket URL
+      const wsUrl = process.env.REACT_APP_SOCKET_URL || 'wss://aicopilot.onrender.com';
       
-      console.log(`[WebSocket] Attempting to connect to: ${wsUrl} (SessionId: ${sessionId}, UserID: ${user._id})`);
+      console.log(`[WebSocket] Attempting to connect to: ${wsUrl} (SessionId: ${sessionId}, UserID: ${user._id}, Using env var: ${!!process.env.REACT_APP_SOCKET_URL})`);
       setStatus(`Connecting to WebSocket...`);
       
       try {

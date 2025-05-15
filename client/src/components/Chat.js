@@ -183,6 +183,18 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
   const [typingUsers, setTypingUsers] = useState([]);
   const [readReceipts, setReadReceipts] = useState({});
   const typingTimeoutRef = useRef(null);
+
+  // Helper function to remove duplicates based on userId
+  const getUniqueUsers = (users) => {
+    if (!Array.isArray(users)) return [];
+    const seen = new Set();
+    return users.filter(user => {
+      if (!user || typeof user.userId === 'undefined') return false; // Ensure user and userId exist
+      const duplicate = seen.has(user.userId);
+      seen.add(user.userId);
+      return !duplicate;
+    });
+  };
   
   // --- WebSocket Connection ---
 
@@ -282,8 +294,8 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
               // Another user joined the chat
               if (receivedMsg.chatId === sessionId) {
                 console.log(`User joined: ${receivedMsg.userId}`);
-                // Update the active users list
-                setActiveUsers(receivedMsg.activeUsers || []);
+                // Update the active users list, ensuring uniqueness
+                setActiveUsers(getUniqueUsers(receivedMsg.activeUsers || []));
                 // Optionally show a notification
                 if (receivedMsg.userId !== user?._id) {
                   setStatus(`${receivedMsg.username || 'Someone'} joined the chat`);
@@ -296,8 +308,8 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
               // Another user left the chat
               if (receivedMsg.chatId === sessionId) {
                 console.log(`User left: ${receivedMsg.userId}`);
-                // Update the active users list
-                setActiveUsers(receivedMsg.activeUsers || []);
+                // Update the active users list, ensuring uniqueness
+                setActiveUsers(getUniqueUsers(receivedMsg.activeUsers || []));
                 // Remove from typing users
                 setTypingUsers(prev => prev.filter(u => u.userId !== receivedMsg.userId));
                 // Optionally show a notification
@@ -309,10 +321,10 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
             case 'new_message':
               // New message received
               if (receivedMsg.chatId === sessionId && receivedMsg.sender !== user?._id) {
-                console.log('Adding message to UI:', receivedMsg.content);
+                console.log('Adding message to UI:', receivedMsg.text); // Use receivedMsg.text
                 
                 // Determine if it's an AI message
-                const isAiMessage = receivedMsg.sender === 'ai';
+                const isAiMessage = receivedMsg.sender === 'ai' || receivedMsg.sender === 'GLOBAL_AI_ASSISTANT';
                 
                 // Create message object with a consistent structure
                 const newMessage = {

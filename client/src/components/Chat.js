@@ -1,6 +1,20 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 // Import specific API functions
-import { getSession, startSession, sendMessage, updateSession } from '../services/api'; 
+import { 
+  getSession,
+  startSession, 
+  sendMessage, 
+  updateSession,
+  getGlobalChat,
+  joinGlobalChat,
+  leaveGlobalChat,
+  sendGlobalChatMessage,
+  clearGlobalChatAPI
+} from '../services/api';
 
 // Check for SpeechRecognition API
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -11,6 +25,19 @@ if (recognition) {
   recognition.interimResults = true; // Get results while speaking
   recognition.lang = 'en-US'; // Set language
 }
+
+// SVG Icon components
+const CopyIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 4.625a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0z" />
+  </svg>
+);
+
+const CheckIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 text-green-400">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+  </svg>
+);
 
 // Accept onNewAiResponse and initialSessionId props
 export default function Chat({ user, onNewAiResponse, initialSessionId = null }) {
@@ -27,10 +54,12 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
   const [isSystemPromptVisible, setIsSystemPromptVisible] = useState(false); // State for prompt visibility
   const [isRecording, setIsRecording] = useState(false);
   const [speechApiAvailable, setSpeechApiAvailable] = useState(!!recognition);
+  const [copiedStates, setCopiedStates] = useState({});
   const recognitionRef = useRef(recognition);
   const isManuallyStoppingRef = useRef(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null); // Ref for the chat input element
+  const ws = useRef(null); // WebSocket reference
 
   // Define available models
   const availableModels = [
@@ -41,13 +70,55 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
     // Add other models as needed, e.g., 'gemini-pro'
   ];
 
+  // Flag to identify if this is a global chat
+  const [isGlobalChat, setIsGlobalChat] = useState(false);
+
   // Load existing session or create new one on mount
   useEffect(() => {
     const initializeSession = async () => {
       setError(null); // Clear previous errors
-      if (initialSessionId) {
-        // --- Load Existing Session ---
+      
+      // Check if this is the global chat
+      if (initialSessionId === 'global') {
+        // --- Load Global Chat ---
         try {
+          setIsGlobalChat(true);
+          setStatus('Loading global chat...');
+          setLoading(true); // Indicate loading state
+          
+          // Join global chat to mark user as active
+          await joinGlobalChat();
+          
+          // Get global chat data
+          const res = await getGlobalChat();
+          
+          // Transform messages to match our component's format
+          const formattedMessages = res.data.messages.map(msg => ({
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            sender: msg.sender?.userId || 'system',
+            messageId: msg._id
+          }));
+          
+          setMessages(formattedMessages || []);
+          setSessionId('global'); // Use 'global' as the session ID for WebSocket
+          setSystemPrompt('');
+          setSavedSystemPrompt('');
+          setStatus('Global chat loaded');
+          
+        } catch (err) {
+          console.error('Failed to load global chat:', err);
+          setError(`Failed to load global chat. ${err.response?.data?.error || err.message}`);
+          setStatus('Global chat load failed');
+        } finally {
+          setLoading(false);
+        }
+        
+      } else if (initialSessionId && initialSessionId !== 'global') {
+        // --- Load Existing Session (Regular Chat) ---
+        try {
+          setIsGlobalChat(false);
           setStatus(`Loading session ${initialSessionId}...`);
           setLoading(true); // Indicate loading state
           // Use imported getSession function
@@ -58,7 +129,6 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
           setSessionId(sessionData._id);
           setSystemPrompt(sessionData.systemPrompt || '');
           setSavedSystemPrompt(sessionData.systemPrompt || '');
-          // Optionally set topic if needed: setTopic(sessionData.topic);
           setStatus('Session loaded');
 
         } catch (err) {
@@ -73,6 +143,7 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
       } else {
         // --- Create New Session ---
         try {
+          setIsGlobalChat(false);
           setStatus('Creating new session...');
           setLoading(true);
           // Send initial system prompt value when creating
@@ -87,16 +158,309 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
           setError('Failed to create session. Please try again.');
           setStatus('Session creation failed');
         } finally {
-            setLoading(false);
+          setLoading(false);
         }
       }
     };
 
     initializeSession();
-    // Dependency array: initialSessionId ensures this runs if the target session changes.
-    // systemPrompt is NOT included here, as we only want to use the *initial* prompt
-    // value when creating a session, not re-run this effect every time the prompt input changes.
   }, [initialSessionId]);
+  
+  // Clean up when unmounting - leave global chat if necessary
+  useEffect(() => {
+    return () => {
+      if (isGlobalChat) {
+        // Leave global chat when component unmounts
+        leaveGlobalChat().catch(err => {
+          console.error('Error leaving global chat:', err);
+        });
+      }
+    };
+  }, [isGlobalChat]);
+
+  // --- Additional state for live chat features ---
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [typingUsers, setTypingUsers] = useState([]);
+  const [readReceipts, setReadReceipts] = useState({});
+  const typingTimeoutRef = useRef(null);
+  
+  // --- WebSocket Connection ---
+
+  const handleClearGlobalChat = async () => {
+    if (!isGlobalChat || loading) return;
+
+    if (window.confirm('Are you sure you want to clear all messages in the global chat? This cannot be undone.')) {
+      setLoading(true);
+      setError(null);
+      try {
+        await clearGlobalChatAPI();
+        // Optimistically update UI for the clearer
+        setMessages([{
+          role: 'system',
+          content: 'Global chat was cleared by you.',
+          timestamp: new Date().toISOString()
+        }]);
+        setStatus('Global chat cleared by you.');
+
+        // Notify other clients via WebSocket
+        if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+          ws.current.send(JSON.stringify({
+            type: 'broadcast_clear_chat',
+            chatId: 'global',
+            userId: user?._id // Include who initiated for server-side logging/attribution if needed
+          }));
+        }
+        console.log('Global chat clear initiated and broadcast signal sent.');
+      } catch (err) {
+        console.error('Failed to clear global chat:', err);
+        setError(`Failed to clear global chat. ${err.response?.data?.error || err.message}`);
+        setStatus('Failed to clear global chat.');
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    console.log('[WebSocket Effect] Running. SessionId:', sessionId, 'User ID:', user?._id);
+    if (sessionId && user?._id) {
+      // Dynamically determine WebSocket URL based on current window location
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      let wsHost = window.location.hostname;
+      // If running locally with a different port for API, use port 5000
+      const wsPort = window.location.hostname === 'localhost' ? ':5000' : (window.location.port ? `:${window.location.port}` : '');
+      const wsUrl = `${protocol}//${wsHost}${wsPort}`;
+      
+      console.log(`[WebSocket] Attempting to connect to: ${wsUrl} (SessionId: ${sessionId}, UserID: ${user._id})`);
+      setStatus(`Connecting to WebSocket...`);
+      
+      try {
+        ws.current = new WebSocket(wsUrl);
+      } catch (e) {
+        console.error('[WebSocket] Error creating WebSocket instance:', e);
+        setError('Failed to create WebSocket. See console.');
+        setStatus('WebSocket creation error.');
+        return;
+      }
+
+      ws.current.onopen = () => {
+        console.log('WebSocket connected');
+        setStatus('Real-time service connected.');
+        if (ws.current && ws.current.readyState === WebSocket.OPEN && sessionId) {
+          // Send join message with more details
+          ws.current.send(JSON.stringify({
+            type: 'join_chat',
+            chatId: sessionId,
+            userId: user?._id,
+            username: user?.name || user?.email || 'Anonymous'
+          }));
+          console.log(`Sent join_chat for ${sessionId}`);
+        }
+      };
+
+      ws.current.onmessage = (event) => {
+        try {
+          const receivedMsg = JSON.parse(event.data);
+          console.log('WebSocket message received:', receivedMsg);
+
+          // Handle different message types
+          switch (receivedMsg.type) {
+            case 'global_chat_cleared':
+              if (receivedMsg.chatId === 'global' && sessionId === 'global') {
+                const clearedByCurrentUser = receivedMsg.clearedBy === user?._id;
+                setMessages([{
+                  role: 'system',
+                  content: `Global chat was cleared ${clearedByCurrentUser ? 'by you' : `by user ${receivedMsg.clearedBy}`}.`, // Consider showing username if available
+                  timestamp: receivedMsg.timestamp || new Date().toISOString()
+                }]);
+                setStatus('Global chat cleared.');
+                console.log(`Global chat cleared event received. Cleared by: ${receivedMsg.clearedBy}`);
+              }
+              break;
+            case 'join_success':
+              // Server confirms successful join
+              console.log(`Successfully joined chat ${receivedMsg.chatId}`);
+              break;
+              
+            case 'user_joined':
+              // Another user joined the chat
+              if (receivedMsg.chatId === sessionId) {
+                console.log(`User joined: ${receivedMsg.userId}`);
+                // Update the active users list
+                setActiveUsers(receivedMsg.activeUsers || []);
+                // Optionally show a notification
+                if (receivedMsg.userId !== user?._id) {
+                  setStatus(`${receivedMsg.username || 'Someone'} joined the chat`);
+                  setTimeout(() => setStatus('Real-time service connected.'), 3000);
+                }
+              }
+              break;
+              
+            case 'user_left':
+              // Another user left the chat
+              if (receivedMsg.chatId === sessionId) {
+                console.log(`User left: ${receivedMsg.userId}`);
+                // Update the active users list
+                setActiveUsers(receivedMsg.activeUsers || []);
+                // Remove from typing users
+                setTypingUsers(prev => prev.filter(u => u.userId !== receivedMsg.userId));
+                // Optionally show a notification
+                setStatus(`${receivedMsg.username || 'Someone'} left the chat`);
+                setTimeout(() => setStatus('Real-time service connected.'), 3000);
+              }
+              break;
+              
+            case 'new_message':
+              // New message received
+              if (receivedMsg.chatId === sessionId && receivedMsg.sender !== user?._id) {
+                console.log('Adding message to UI:', receivedMsg.content);
+                
+                // Determine if it's an AI message
+                const isAiMessage = receivedMsg.sender === 'ai';
+                
+                // Create message object with a consistent structure
+                const newMessage = {
+                  role: isAiMessage ? 'assistant' : 'user', // Display as AI or user message
+                  content: receivedMsg.content,
+                  timestamp: receivedMsg.timestamp,
+                  sender: receivedMsg.sender,
+                  messageId: receivedMsg.messageId
+                };
+                
+                setMessages(prevMessages => {
+                  // Avoid adding duplicate messages
+                  const messageExists = prevMessages.some(
+                    msg => msg.messageId === receivedMsg.messageId ||
+                           (msg.content === receivedMsg.content && 
+                            msg.timestamp === receivedMsg.timestamp && 
+                            msg.sender === receivedMsg.sender)
+                  );
+                  if (messageExists) {
+                    console.log('Duplicate message detected, not adding.');
+                    return prevMessages;
+                  }
+                  return [...prevMessages, newMessage];
+                });
+                
+                // Remove user from typing list when their message arrives
+                setTypingUsers(prev => prev.filter(u => u.userId !== receivedMsg.sender));
+                
+                // Send read receipt
+                if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+                  ws.current.send(JSON.stringify({
+                    type: 'message_read',
+                    chatId: sessionId,
+                    messageId: receivedMsg.messageId,
+                    userId: user?._id
+                  }));
+                }
+              }
+              break;
+              
+            case 'typing_status':
+              // Someone is typing
+              if (receivedMsg.chatId === sessionId && receivedMsg.userId !== user?._id) {
+                if (receivedMsg.isTyping) {
+                  // Add to typing users
+                  setTypingUsers(prev => {
+                    if (!prev.some(u => u.userId === receivedMsg.userId)) {
+                      return [...prev, {
+                        userId: receivedMsg.userId,
+                        username: receivedMsg.username || 'Someone'
+                      }];
+                    }
+                    return prev;
+                  });
+                } else {
+                  // Remove from typing users
+                  setTypingUsers(prev => prev.filter(u => u.userId !== receivedMsg.userId));
+                }
+              }
+              break;
+              
+            case 'message_read':
+              // Message was read by someone
+              if (receivedMsg.chatId === sessionId) {
+                setReadReceipts(prev => ({
+                  ...prev,
+                  [receivedMsg.messageId]: [
+                    ...(prev[receivedMsg.messageId] || []),
+                    receivedMsg.userId
+                  ]
+                }));
+              }
+              break;
+              
+            case 'user_info_update':
+              // User info was updated
+              if (receivedMsg.chatId === sessionId) {
+                // Update active users with new info
+                setActiveUsers(prev => 
+                  prev.map(u => 
+                    u.userId === receivedMsg.userId 
+                      ? { ...u, username: receivedMsg.username }
+                      : u
+                  )
+                );
+                
+                // Update typing users with new info
+                setTypingUsers(prev => 
+                  prev.map(u => 
+                    u.userId === receivedMsg.userId 
+                      ? { ...u, username: receivedMsg.username }
+                      : u
+                  )
+                );
+              }
+              break;
+              
+            default:
+              console.log(`Unhandled message type: ${receivedMsg.type}`, receivedMsg);
+          }
+        } catch (error) {
+          console.error('Error processing WebSocket message:', error);
+        }
+      };
+
+      ws.current.onerror = (event) => {
+        console.error('[WebSocket] Connection Error:', event);
+        let errorDetails = 'WebSocket connection error.';
+        if (event.message) errorDetails += ` Message: ${event.message}`;
+        if (event.code) errorDetails += ` Code: ${event.code}`;
+
+        setError(errorDetails + ' Check browser console for more details.');
+        setStatus('WebSocket connection error.');
+      };
+
+      ws.current.onclose = (event) => {
+        console.log('[WebSocket] Disconnected.', `Code: ${event.code}, Reason: "${event.reason}", WasClean: ${event.wasClean}`);
+        let closeReason = `WebSocket disconnected. Code: ${event.code}.`;
+        if (event.reason) {
+          closeReason += ` Reason: ${event.reason}`;
+        }
+        // Only set error if it wasn't a clean close or if no open event fired
+        if (!event.wasClean && status !== 'Real-time service connected.') {
+            setError(closeReason);
+            setStatus('WebSocket disconnected with error.');
+        } else if (status === 'Real-time service connected.') { // if it was connected then disconnected
+            setStatus('Real-time service disconnected.');
+        } else { // if it never connected
+            setStatus('WebSocket connection failed to open.');
+            if (!error) { // If no specific error was already set by onerror
+                 setError(closeReason + ' Connection could not be established.');
+            }
+        }
+      };
+
+      // Cleanup on component unmount or when sessionId/user changes
+      return () => {
+        if (ws.current) {
+          ws.current.close();
+          ws.current = null;
+        }
+      };
+    }
+  }, [sessionId, user?._id]); // Reconnect if sessionId or user._id changes
 
 
   // --- Global Key Listener for Input Focus ---
@@ -172,57 +536,54 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
     }
     setError(errorMessage);
 
-    // Don't attempt to restart if the error is critical (e.g., permissions)
-    const criticalErrors = ['not-allowed', 'service-not-allowed', 'network', 'audio-capture'];
+    const criticalErrors = ['not-allowed', 'service-not-allowed', 'network'];
     if (criticalErrors.includes(event.error)) {
         console.log('Critical speech error, stopping recording state.');
-        setIsRecording(false); // Ensure recording state is off
-        isManuallyStoppingRef.current = true; // Prevent restart in onend
-    } else {
-        // For less critical errors, we might still allow onend to try restarting
-        // but ensure the visual state reflects it stopped for now.
         setIsRecording(false);
+        isManuallyStoppingRef.current = true;
+    } else if (event.error === 'no-speech' || event.error === 'audio-capture') {
+        // For 'no-speech' or 'audio-capture' (which can be temporary),
+        // allow 'onend' to attempt a restart if still in recording mode.
+        // Do not change isRecording or isManuallyStoppingRef here.
+        console.log(`Speech error (${event.error}), allowing 'onend' to handle potential restart.`);
+    } else {
+        // For other unexpected errors, treat them as needing a manual reset.
+        console.log(`Other speech error (${event.error}), stopping recording state.`);
+        setIsRecording(false);
+        isManuallyStoppingRef.current = true;
     }
-  }, []); // No dependencies needed
+  }, [setError]);
 
   // End handler with restart logic for continuous listening
   const handleRecognitionEnd = useCallback(() => {
     console.log('Speech recognition ended.');
 
-    // Check if this was a manual stop or critical error
     if (isManuallyStoppingRef.current) {
         console.log('Manual stop or critical error detected in onend, not restarting.');
-        isManuallyStoppingRef.current = false; // Reset the flag
-        setIsRecording(false); // Ensure UI reflects the stop
-        return; // Explicitly stop here
+        isManuallyStoppingRef.current = false;
+        setIsRecording(false);
+        return;
     }
 
-    // If it wasn't a manual stop and the user still intends to record, restart immediately.
-    // This is crucial for mobile browsers that might stop recognition frequently.
     if (isRecording && recognitionRef.current) {
         console.log('Non-manual stop detected, attempting immediate restart...');
         try {
             recognitionRef.current.start();
             console.log('Recognition restarted immediately.');
-            // isRecording state remains true
         } catch (e) {
             console.error("Error restarting recognition immediately:", e);
-            // Check if the error is the specific 'already started' error
             if (e.name === 'InvalidStateError') {
                  console.warn("Restart attempt failed: Recognition was likely already running or starting.");
-                 // Don't set error or change isRecording state in this specific case
             } else {
                 setError("Mic failed to restart. Please try toggling it off/on.");
-                setIsRecording(false); // Stop if restart fails for other reasons
+                setIsRecording(false);
             }
         }
     } else {
-        // If isRecording is false here, it means the user toggled it off
-        // between the start and end events, or it was handled by the manual stop check above.
         console.log('Recognition ended, but isRecording is false. No restart needed.');
-        setIsRecording(false); // Ensure state is definitely false
+        setIsRecording(false);
     }
-  }, [isRecording]); // isRecording is the key dependency
+  }, [isRecording, setError]);
 
   // Effect to attach/detach listeners
   useEffect(() => {
@@ -293,15 +654,69 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
     setError(null);
 
     // Add user message to UI immediately using role/content
+    const timestamp = new Date().toISOString();
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
     setMessages(prev => [...prev, {
       role: 'user', // Use role
       content: textToSend, // Use content
-      timestamp: new Date().toISOString()
+      timestamp: timestamp,
+      sender: user?._id, // Add sender to optimistic update
+      messageId: messageId
     }]);
 
+    // Send message via WebSocket
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      const wsMessage = {
+        type: 'chat_message', // Add type for chat messages
+        text: textToSend,
+        chatId: sessionId,
+        sender: user?._id || 'unknown_user', // Ensure sender is included
+        messageId: messageId
+      };
+      ws.current.send(JSON.stringify(wsMessage));
+      console.log('Message sent via WebSocket:', wsMessage);
+    } else {
+      console.warn('WebSocket not connected. Message not sent in real-time to other clients.');
+    }
+
     try {
-      // Send message to backend using imported sendMessage function
-      // Pass a single object containing sessionId, text, and model
+      // Handle differently based on whether this is global chat or regular chat
+      if (isGlobalChat) {
+        // For global chat, the API now handles AI response generation and returns it.
+        const res = await sendGlobalChatMessage(textToSend);
+        console.log('Global chat message and AI response processed by API:', res.data);
+
+        if (res.data && res.data.success && res.data.aiMessage) {
+          const aiMessage = {
+            role: 'assistant',
+            content: res.data.aiMessage.content,
+            timestamp: res.data.aiMessage.timestamp || new Date().toISOString(),
+            sender: res.data.aiMessage.sender.userId || 'GLOBAL_AI_ASSISTANT', // Ensure sender ID is used
+            messageId: res.data.aiMessage._id || `ai-${Date.now()}` // Use _id from DB if available
+          };
+          
+          // Add AI message to UI
+          setMessages(prev => [...prev, aiMessage]);
+
+          // Broadcast AI message via WebSocket
+          if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+            const wsAiMessage = {
+              type: 'chat_message',
+              text: aiMessage.content,
+              chatId: 'global', // Explicitly 'global'
+              sender: aiMessage.sender, // This should be 'GLOBAL_AI_ASSISTANT'
+              messageId: aiMessage.messageId
+            };
+            ws.current.send(JSON.stringify(wsAiMessage));
+            console.log('Global AI response broadcast via WebSocket:', wsAiMessage);
+          }
+        }
+        setLoading(false);
+        return;
+      }
+      
+      // For regular chat, send message to AI
       const res = await sendMessage({ 
         sessionId: sessionId, // Include sessionId in the object
         text: textToSend,
@@ -309,17 +724,36 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
         // systemPrompt is handled by the backend
       });
 
+      // Generate a unique ID for the AI message
+      const messageId = `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
       // Add AI response to UI using role/content
       const newAiMessage = {
         role: 'assistant', // Use role
         content: res.data.response, // Use content
-        timestamp: res.data.timestamp // Assuming backend sends timestamp
+        timestamp: res.data.timestamp, // Assuming backend sends timestamp
+        messageId: messageId // Add message ID for reference
       };
+      
       setMessages(prev => [...prev, newAiMessage]);
+      
+      // Broadcast AI response via WebSocket so other clients can see it
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        const wsMessage = {
+          type: 'chat_message', // Use same message type for consistency
+          text: res.data.response,
+          chatId: sessionId,
+          sender: 'ai', // Mark as AI message
+          messageId: messageId
+        };
+        
+        ws.current.send(JSON.stringify(wsMessage));
+        console.log('AI response broadcast via WebSocket:', wsMessage);
+      }
 
       // Call the callback prop to update the Dashboard state
       if (onNewAiResponse) {
-        onNewAiResponse(newAiMessage.text);
+        onNewAiResponse(newAiMessage.content);
       }
 
     } catch (err) {
@@ -382,9 +816,56 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
   };
 
 
+  // Send typing status when user starts/stops typing
+  const sendTypingStatus = (isTyping) => {
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN || !sessionId || !user?._id) return;
+    
+    ws.current.send(JSON.stringify({
+      type: 'typing_status',
+      chatId: sessionId,
+      userId: user._id,
+      username: user?.name || user?.email || 'Anonymous',
+      isTyping
+    }));
+    console.log(`Sent typing status: ${isTyping ? 'true' : 'false'}`);
+  };
+  
+  // Handle input changes with debounced typing status
+  const handleInputChange = (e) => {
+    const newValue = e.target.value;
+    setInput(newValue);
+    
+    // Clear any previous timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    // Send typing status if user starts typing
+    if (newValue && newValue !== input) {
+      sendTypingStatus(true);
+      
+      // Set timeout to automatically clear typing status after inactivity
+      typingTimeoutRef.current = setTimeout(() => {
+        sendTypingStatus(false);
+      }, 3000);
+    } else if (!newValue) {
+      // If input is cleared, immediately send stopped typing
+      sendTypingStatus(false);
+    }
+  };
+
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !loading) { // Prevent sending while loading
+    // Send message on Enter key
+    if (e.key === 'Enter' && !loading && input.trim()) {
       sendTypedMessage();
+      // Send stopped typing status after sending message
+      sendTypingStatus(false);
+      
+      // Clear any pending typing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
     }
   };
 
@@ -392,10 +873,24 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
     <div className="flex flex-col h-full bg-gray-800 rounded-lg shadow-lg p-2 overflow-auto "> {/* Responsive padding */}
       {/* Header Area */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        {/* Status Indicator */}
-        <div className="flex items-center">
-          <div className={`w-2 h-2 rounded-full mr-2 ${sessionId ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-sm text-gray-300">{status}</span>
+        <div className="flex items-center space-x-4"> {/* Container for status and clear button */}
+          {/* Status Indicator */}
+          <div className="flex items-center">
+            <div className={`w-2 h-2 rounded-full mr-2 ${sessionId ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-sm text-gray-300">{status}</span>
+          </div>
+
+          {/* Clear Global Chat Button */}
+          {isGlobalChat && (
+            <button
+              onClick={handleClearGlobalChat}
+              className="px-3 py-1 text-xs bg-red-700 hover:bg-red-800 text-white rounded focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition-colors"
+              title="Clear all messages in global chat"
+              disabled={loading}
+            >
+              Clear Chat
+            </button>
+          )}
         </div>
         
         {/* Model Selector Dropdown */}
@@ -480,6 +975,19 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
           </div>
         )}
         
+        {/* Active Users Indicator */}
+        {activeUsers.length > 0 && (
+          <div className="bg-gray-900/50 text-gray-300 p-2 rounded-lg text-xs">
+            <span className="font-medium">Active users: </span>
+            {activeUsers.map((user, index) => (
+              <span key={user.userId}>
+                {user.username || "Anonymous"}
+                {index < activeUsers.length - 1 ? ', ' : ''}
+              </span>
+            ))}
+          </div>
+        )}
+        
         {/* Render messages using role and content */}
         {messages.map((message, index) => (
           <div 
@@ -492,9 +1000,54 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
               </div>
             )}
             
-            <div className={`max-w-xs p-3 rounded-lg ${message.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-100'}`}> {/* Use message.role */}
+            <div className={`max-w-[90%] p-3 rounded-lg ${message.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-100 markdown-content'}`}> {/* Use message.role */}
               {/* Use message.content, check if it exists */}
-              <p className="whitespace-pre-wrap">{message.content || ''}</p> 
+              {message.role === 'assistant' ? (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    code({ node, inline, className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(className || '');
+                      const codeText = String(children).replace(/\n$/, '');
+                      const handleCopy = () => {
+                        navigator.clipboard.writeText(codeText).then(() => {
+                          setCopiedStates(prev => ({ ...prev, [node.position.start.offset]: true }));
+                          setTimeout(() => {
+                            setCopiedStates(prev => ({ ...prev, [node.position.start.offset]: false }));
+                          }, 2000);
+                        });
+                      };
+
+                      return !inline && match ? (
+                        <div className="relative group">
+                          <button
+                            onClick={handleCopy}
+                            title={copiedStates[node.position.start.offset] ? 'Copied!' : 'Copy code'}
+                            className="absolute top-2.5 right-2.5 p-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md opacity-0 group-hover:opacity-100 transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                          >
+                            {copiedStates[node.position.start.offset] ? <CheckIcon /> : <CopyIcon />}
+                          </button>
+                          <SyntaxHighlighter
+                            style={vscDarkPlus}
+                            language={match[1]}
+                            {...props}
+                          >
+                            {codeText}
+                          </SyntaxHighlighter>
+                        </div>
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
+                >
+                  {message.content || ''}
+                </ReactMarkdown>
+              ) : (
+                <p className="whitespace-pre-wrap">{message.content || ''}</p>
+              )}
               {message.timestamp && (
                 <span className="text-xs text-gray-400 mt-1 block">
                   {new Date(message.timestamp).toLocaleTimeString()} {/* Keep timestamp logic */}
@@ -502,20 +1055,61 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
               )}
             </div>
             
-            {message.role === 'user' && ( // Use message.role
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold ml-2">
-                You {/* Keep 'You' label */}
-              </div>
-            )}
+            {message.role === 'user' && (() => {
+              let avatarText = 'USR';
+              let userTitle = 'User';
+              if (user && user.email) {
+                userTitle = user.email;
+                const emailPrefix = user.email.split('@')[0];
+                if (emailPrefix && emailPrefix.length > 0) {
+                  avatarText = emailPrefix.substring(0, 1).toUpperCase();
+                } else {
+                  // Fallback if email prefix is empty (e.g. email is "@domain.com")
+                  avatarText = user.email.substring(0,1).toUpperCase() || 'U';
+                }
+              }
+              return (
+                <div 
+                  className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-sm font-bold ml-2"
+                  title={userTitle} // Show full email on hover
+                >
+                  {avatarText}
+                </div>
+              );
+            })()}
           </div>
         ))}
         
+        {/* Typing indicator */}
+        {typingUsers.length > 0 && (
+          <div className="flex items-start justify-start">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold mr-2">
+              ...
+            </div>
+            <div className="max-w-[90%] p-3 rounded-lg bg-gray-700 text-gray-200">
+              <div className="flex flex-col">
+                <div className="flex space-x-1 mb-1">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                </div>
+                <div className="text-xs text-gray-400">
+                  {typingUsers.length === 1 
+                    ? `${typingUsers[0].username} is typing...` 
+                    : `${typingUsers.length} people are typing...`}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {/* AI is thinking indicator */}
         {loading && (
           <div className="flex items-start justify-start">
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold mr-2">
               AI
             </div>
-            <div className="max-w-xs p-3 rounded-lg bg-gray-700 text-gray-100">
+            <div className="max-w-[90%] p-3 rounded-lg bg-gray-700 text-gray-100">
               <div className="flex space-x-1">
                 <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
                 <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
@@ -552,7 +1146,7 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
           ref={inputRef} // Assign the ref here
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={handleInputChange} // Use handleInputChange to send typing status
           onKeyPress={handleKeyPress}
           placeholder={sessionId ? "Type your response..." : "Waiting for session..."}
           className={`flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all ${

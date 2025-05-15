@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { loginUser, resetAuthError, selectAuthError, selectAuthIsLoading } from '../features/auth/authSlice'; // Adjust path
+import { loginUser, resetAuthError, authSelectors } from '../features/auth/authSlice'; // Adjust path
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
-import { router, Link } from 'expo-router'; 
-import { AppDispatch, RootState } from '../store'; 
+import { router, Link } from 'expo-router';
+import { AppDispatch, RootState } from '../store';
 
 
 interface LoginProps {}
@@ -17,9 +17,9 @@ export default function Login(props: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const dispatch = useDispatch<AppDispatch>();
-  const isLoading = useSelector(selectAuthIsLoading);
-  const error = useSelector(selectAuthError);
-  const isAuthenticated = useSelector(selectIsAuthenticated); // Get isAuthenticated state
+  const isLoading = useSelector(authSelectors.selectAuthIsLoading);
+  const error = useSelector(authSelectors.selectAuthError);
+  const isAuthenticated = useSelector(authSelectors.selectIsAuthenticated); // Get isAuthenticated state
 
   useEffect(() => {
     // Clear error when the component mounts
@@ -29,10 +29,11 @@ export default function Login(props: LoginProps) {
   useEffect(() => {
     // Log auth state change for debugging
     console.log('[LOGIN] isAuthenticated state changed:', isAuthenticated);
-    // If authenticated, you might want to navigate here, but index.tsx handles the primary redirect
-    // if (isAuthenticated) {
-    //   router.replace('/Dashboard');
-    // }
+    // If authenticated, navigate directly from here.
+    if (isAuthenticated) {
+      console.log('[LOGIN] Authenticated, navigating to Dashboard...');
+      router.replace('/Dashboard');
+    }
   }, [isAuthenticated]);
 
 

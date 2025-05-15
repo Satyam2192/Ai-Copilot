@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.js';
 import sessionRoutes from './routes/sessions.js';
 import questionRoutes from './routes/questions.js';
 import chatRoutes from './routes/chat.js'; // Added chat route
+import commonChatRoutes from './routes/commonChat.js'; // Added common chat route
 import { initWebSocketServer } from './socket.js';
 
 dotenv.config();
@@ -24,9 +25,11 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'https://aicopilot-peach.vercel.app',
+    'https://aicopilot.onrender.com',
     'https://9287mcx4-3000.inc1.devtunnels.ms',
     'exp://localhost:*', 
-    'http://localhost:*' 
+    'http://localhost:*' ,
+    'http://192.168.0.5:3000'
   ],
   credentials: true,
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -40,8 +43,7 @@ app.use('/api', authRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/chat', chatRoutes); // Added chat route middleware
-
-// Removed socket initialization
+app.use('/api/common-chat', commonChatRoutes); // Added common chat routes
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

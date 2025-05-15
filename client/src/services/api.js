@@ -97,6 +97,13 @@ export const updateSessionFeedback = (id, feedbackData) => apiClient.post(`/api/
 // chatController expects sessionId in the body, not the URL path
 export const sendMessage = (messageData) => apiClient.post('/api/chat', messageData);
 
+// Common Chat (Mounted under /api/common-chat)
+export const getGlobalChat = () => apiClient.get('/api/common-chat/global');
+export const joinGlobalChat = () => apiClient.post('/api/common-chat/global/join');
+export const leaveGlobalChat = () => apiClient.post('/api/common-chat/global/leave');
+export const sendGlobalChatMessage = (content) => apiClient.post('/api/common-chat/global/message', { content });
+export const clearGlobalChatAPI = () => apiClient.post('/api/common-chat/global/clear');
+
 // Questions (Mounted under /api/questions)
 export const getQuestions = (params) => apiClient.get('/api/questions', { params });
 export const getQuestionById = (id) => apiClient.get(`/api/questions/${id}`);

@@ -56,7 +56,7 @@ export async function register(req, res) {
       email: user.email // Removed duplicate lines
     });
 
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
+    const token = jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET);
     // Set token in both httpOnly cookie and x-auth-token header
     res.cookie('token', token, {
         httpOnly: true,
@@ -67,6 +67,7 @@ export async function register(req, res) {
     res.header('x-auth-token', token); // Send token in header for client interceptor
     res.json({
       user: {
+        _id: user._id, // Add _id
         email: user.email,
         createdAt: user.createdAt
       } 
@@ -111,7 +112,7 @@ export async function login(req, res) {
       return res.status(401).send('Invalid credentials');
     }
     
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET);
+    const token = jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET);
     
     formatLog('INFO', 'login', 'Login successful', {
       userId: user._id,
@@ -129,6 +130,7 @@ export async function login(req, res) {
     res.header('x-auth-token', token); // Send token in header for client interceptor
     res.json({
       user: {
+        _id: user._id, // Add _id
         email: user.email,
         lastLogin: new Date()
       } 
@@ -156,8 +158,8 @@ export function me(req, res) {
     
     res.json({ 
       user: { 
+        _id: req.user.id, // Change id to _id for consistency
         email: req.user.email,
-        id: req.user.id,
         lastAccess: new Date()
       } 
     });

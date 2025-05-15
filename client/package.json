@@ -5,14 +5,22 @@
   "dependencies": {
     "@reduxjs/toolkit": "^2.7.0",
     "axios": "^1.9.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^15.0.11",
+    "prismjs": "^1.30.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
+    "react-markdown": "^10.1.0",
     "react-redux": "^9.2.0",
     "react-resizable-panels": "^2.1.9",
     "react-speech-recognition": "^3.10.0",
+    "react-syntax-highlighter": "^15.6.1",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
     "socket.io-client": "^4.6.0"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.16",
     "autoprefixer": "^10.4.0",
     "postcss": "^8.4.0",
     "react-scripts": "^5.0.1",
@@ -22,7 +30,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build"
   },
-  "proxy": "https://aicopilot.onrender.com", 
+  "proxy": "https://aicopilot.onrender.com",
   "browserslist": {
     "production": [
       ">0.2%",

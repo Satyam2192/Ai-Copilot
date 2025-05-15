@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Chat from './Chat';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -22,6 +22,7 @@ export default function Dashboard({ user, onLogout }) {
   const [isHistoryVisible, setIsHistoryVisible] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [panelDirection, setPanelDirection] = useState('horizontal');
+  const isInitialLoadRef = useRef(true);
 
   // CodeBlockComponent removed for this test step
 
@@ -64,40 +65,79 @@ export default function Dashboard({ user, onLogout }) {
     fetchSessions();
   }, []);
 
-  // Effect to update URL when selectedSessionId changes
+  // Effect to update URL when selectedSessionId changes (State to URL)
   useEffect(() => {
-    const path = selectedSessionId ? (selectedSessionId === 'global' ? '/chat/global' : `/chat/${selectedSessionId}`) : '/';
-    if (window.location.pathname !== path) {
-      window.history.pushState({ sessionId: selectedSessionId }, '', path);
+    if (isInitialLoadRef.current) {
+      // This effect is skipped on the very first run, allowing URL-to-State to establish truth.
+      // It will run if selectedSessionId is changed by URL-to-State, by which time isInitialLoadRef.current will be false.
+      return;
+    }
+
+    let targetPath;
+    if (selectedSessionId === null) {
+      targetPath = '/chat/new';
+    } else if (selectedSessionId === 'global') {
+      targetPath = '/chat/global';
+    } else {
+      targetPath = `/chat/${selectedSessionId}`;
+    }
+
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ sessionId: selectedSessionId }, '', targetPath);
     }
   }, [selectedSessionId]);
 
-  // Effect to handle URL changes (e.g., browser back/forward, direct navigation)
+  // Effect to handle URL changes (e.g., browser back/forward, direct navigation) (URL to State)
   useEffect(() => {
-    const handlePopState = (event) => {
-      const pathParts = window.location.pathname.split('/');
-      if (pathParts.length === 3 && pathParts[1] === 'chat') {
-        const idFromUrl = pathParts[2];
-        setSelectedSessionId(idFromUrl);
-      } else if (window.location.pathname === '/') {
-        setSelectedSessionId(null); // For new chat
+    const handlePathChange = (isPopStateEvent = false) => {
+      const currentPath = window.location.pathname;
+      const pathParts = currentPath.split('/');
+      let newSelectedSessionId = selectedSessionId; // Default to current to avoid unnecessary sets
+
+      if (currentPath === '/chat/new') {
+        newSelectedSessionId = null;
+      } else if (currentPath === '/chat/global') {
+        newSelectedSessionId = 'global';
+      } else if (pathParts.length === 3 && pathParts[1] === 'chat' && pathParts[2] && pathParts[2] !== 'new' && pathParts[2] !== 'global') {
+        newSelectedSessionId = pathParts[2]; // Specific session ID
+      } else if (currentPath === '/') {
+        // Root path: treat as new chat and redirect URL
+        newSelectedSessionId = null;
+        if (!isPopStateEvent && window.location.pathname !== '/chat/new') {
+          window.history.replaceState({ sessionId: null }, '', '/chat/new');
+        }
+      } else {
+        // For any other unrecognized path, consider it a new chat and redirect.
+        const isValidChatPath = currentPath === '/chat/new' || 
+                                currentPath === '/chat/global' || 
+                                (pathParts.length === 3 && pathParts[1] === 'chat' && pathParts[2] && pathParts[2] !== 'new' && pathParts[2] !== 'global');
+        if (!isValidChatPath) {
+          newSelectedSessionId = null;
+          if (!isPopStateEvent && window.location.pathname !== '/chat/new') {
+            window.history.replaceState({ sessionId: null }, '', '/chat/new');
+          }
+        }
+      }
+      
+      if (selectedSessionId !== newSelectedSessionId) {
+        setSelectedSessionId(newSelectedSessionId);
+      }
+      
+      if (isInitialLoadRef.current) {
+        isInitialLoadRef.current = false;
       }
     };
 
-    // Set initial selectedSessionId from URL on component mount
-    const pathParts = window.location.pathname.split('/');
-    if (pathParts.length === 3 && pathParts[1] === 'chat') {
-      setSelectedSessionId(pathParts[2]);
-    } else {
-      // Default to new chat if no specific session in URL, or if it's just '/'
-      // setSelectedSessionId(null); // This might conflict with initialSessionId prop in Chat, let Chat handle its own initial state.
-    }
+    const popStateHandler = () => handlePathChange(true);
 
-    window.addEventListener('popstate', handlePopState);
+    // Initial setup from URL
+    handlePathChange(false);
+
+    window.addEventListener('popstate', popStateHandler);
     return () => {
-      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('popstate', popStateHandler);
     };
-  }, []);
+  }, []); // Empty dependency array: runs once on mount and cleans up on unmount.
 
 
   const handleNewAiResponse = (responseText) => {

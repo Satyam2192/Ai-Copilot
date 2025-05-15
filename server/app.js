@@ -14,12 +14,15 @@ import { initWebSocketServer } from './socket.js';
 dotenv.config();
 
 const app = express();
-const server = http.createServer(app);
+const isVercel = process.env.VERCEL === '1';
+const server = isVercel ? null : http.createServer(app);
 
 connectDB();
 
-// Initialize WebSocket server
-initWebSocketServer(server);
+// Initialize WebSocket server if not on Vercel
+if (!isVercel && server) {
+  initWebSocketServer(server);
+}
 
 app.use(cors({
   origin: [
@@ -46,9 +49,16 @@ app.use('/api/chat', chatRoutes); // Added chat route middleware
 app.use('/api/common-chat', commonChatRoutes); // Added common chat routes
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] Server initialized and running on port ${PORT}`);
-  console.log(`[INFO] Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`[INFO] Connected to database: ${process.env.MONGO_URI}`);
-});
+
+// Start the server only if not running on Vercel
+if (!isVercel && server) {
+  server.listen(PORT, () => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] Server initialized and running on port ${PORT}`);
+    console.log(`[INFO] Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`[INFO] Connected to database: ${process.env.MONGO_URI}`);
+  });
+}
+
+// For Vercel serverless functions
+export default app;

@@ -64,6 +64,42 @@ export default function Dashboard({ user, onLogout }) {
     fetchSessions();
   }, []);
 
+  // Effect to update URL when selectedSessionId changes
+  useEffect(() => {
+    const path = selectedSessionId ? (selectedSessionId === 'global' ? '/chat/global' : `/chat/${selectedSessionId}`) : '/';
+    if (window.location.pathname !== path) {
+      window.history.pushState({ sessionId: selectedSessionId }, '', path);
+    }
+  }, [selectedSessionId]);
+
+  // Effect to handle URL changes (e.g., browser back/forward, direct navigation)
+  useEffect(() => {
+    const handlePopState = (event) => {
+      const pathParts = window.location.pathname.split('/');
+      if (pathParts.length === 3 && pathParts[1] === 'chat') {
+        const idFromUrl = pathParts[2];
+        setSelectedSessionId(idFromUrl);
+      } else if (window.location.pathname === '/') {
+        setSelectedSessionId(null); // For new chat
+      }
+    };
+
+    // Set initial selectedSessionId from URL on component mount
+    const pathParts = window.location.pathname.split('/');
+    if (pathParts.length === 3 && pathParts[1] === 'chat') {
+      setSelectedSessionId(pathParts[2]);
+    } else {
+      // Default to new chat if no specific session in URL, or if it's just '/'
+      // setSelectedSessionId(null); // This might conflict with initialSessionId prop in Chat, let Chat handle its own initial state.
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+
   const handleNewAiResponse = (responseText) => {
     setLatestAiResponse(responseText);
   };

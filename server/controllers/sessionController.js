@@ -243,45 +243,53 @@ export async function updateSession(req, res) {
       query = { _id: id, userId: userId };
     }
 
-    const updatedSession = await Session.findOneAndUpdate(
+    // Perform the update/upsert
+    const initialUpdateResult = await Session.findOneAndUpdate(
       query,
-      { $set: updateData },
-      { new: true, upsert: isGlobalSessionRequest }
-    ).lean();
+      { $set: updateData }, // Only set the fields present in updateData
+      { new: true, upsert: isGlobalSessionRequest } // upsert is true for global
+    ); // Intentionally remove .lean() for a moment from the main update
 
-    if (!updatedSession) {
+    if (!initialUpdateResult) {
       if (isGlobalSessionRequest) {
-        // This means the upsert operation for the global settings session failed.
-        console.error(`Failed to upsert global session for user ${userId} with topic ${USER_GLOBAL_SETTINGS_TOPIC}. Query: ${JSON.stringify(query)}, UpdateData: ${JSON.stringify(updateData)}`);
-        return res.status(500).json({ error: 'Failed to update or create global session settings' });
+        console.error(`[updateSession] Failed to upsert global session for user ${userId} with topic ${USER_GLOBAL_SETTINGS_TOPIC}. Query: ${JSON.stringify(query)}, UpdateData: ${JSON.stringify(updateData)}`);
+        return res.status(500).json({ error: 'Failed to update or create global session settings (initial upsert failed)' });
       } else {
-        // For non-global requests: if session not found by query {_id: id, userId: userId}
-        // Check if the session ID itself exists to distinguish 404 vs 403.
-        // If 'id' is not a valid ObjectId string, Session.exists will throw a CastError,
-        // which will be caught by the main try-catch block.
         const sessionExists = await Session.exists({ _id: id });
         if (!sessionExists) {
           return res.status(404).json({ error: 'Session not found' });
         } else {
-          // Session exists but didn't match userId in the findOneAndUpdate query.
           return res.status(403).json({ error: 'User not authorized to update this session' });
         }
       }
     }
 
-    // Construct response with relevant fields
+    // For global session, re-fetch to be absolutely sure what was saved, then .lean() for response
+    let finalSessionData;
+    if (isGlobalSessionRequest) {
+        const refetchedSession = await Session.findOne(query).lean(); // Re-fetch and then lean
+        if (!refetchedSession) {
+            console.error(`[updateSession] Global session disappeared after upsert for user ${userId}. Query: ${JSON.stringify(query)}`);
+            return res.status(500).json({ error: 'Global session data inconsistency after update.' });
+        }
+        finalSessionData = refetchedSession;
+    } else {
+        // For regular sessions, initialUpdateResult is a Mongoose document here.
+        finalSessionData = initialUpdateResult.toObject(); // Convert to plain object
+    }
+    
     res.json({
       message: 'Session updated successfully',
       session: {
-        _id: updatedSession._id,
-        topic: updatedSession.topic,
-        systemPrompt: updatedSession.systemPrompt,
-        lastActive: updatedSession.lastActive
+        _id: finalSessionData._id,
+        topic: finalSessionData.topic,
+        systemPrompt: finalSessionData.systemPrompt, // This is the critical value
+        lastActive: finalSessionData.lastActive // Ensure this field exists or handle if not
       }
     });
 
   } catch (error) {
-    console.error(`Error updating session ${req.params.id}:`, error);
+    console.error(`[updateSession] Error updating session ${req.params.id}:`, error);
     res.status(500).json({
       error: 'Failed to update session',
       details: error.message

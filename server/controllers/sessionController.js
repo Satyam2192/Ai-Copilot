@@ -46,12 +46,30 @@ export async function startSession(req, res) {
 // Get a specific session by ID
 export async function getSession(req, res) {
   try {
-    const session = await Session.findById(req.params.id)
-      .select('-feedback') // Exclude feedback data by default
-      .lean(); // Use lean for performance
+    let session;
+    const { id } = req.params;
+
+    if (id === 'global') {
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ error: 'User not authenticated for global session settings' });
+      }
+      session = await Session.findOne({ userId: req.user.id, topic: USER_GLOBAL_SETTINGS_TOPIC })
+        .select('-feedback')
+        .lean();
+      // If session is null (not found), the logic below will handle it by returning 404
+      // or the client can interpret a null/empty response as "no global settings saved yet".
+    } else {
+      session = await Session.findById(id)
+        .select('-feedback')
+        .lean();
+    }
 
     if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+      // If 'global' settings were requested and not found, we might not want a 404,
+      // but rather an empty/default object, or let client handle absence.
+      // For now, consistent 404 if no session doc is found.
+      // Client can create one via PATCH to /api/sessions/global if it gets a 404.
+      return res.status(404).json({ error: `Session ${id === 'global' ? 'global settings' : id} not found` });
     }
 
     // Explicitly construct the response object after .lean()

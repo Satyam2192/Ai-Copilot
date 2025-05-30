@@ -1,5 +1,7 @@
 import Session from '../models/Session.js';
 
+const USER_GLOBAL_SETTINGS_TOPIC = "user_global_settings";
+
 // Start a new session
 export async function startSession(req, res) {
   // Assuming auth middleware populates req.user
@@ -196,28 +198,56 @@ export async function updateSession(req, res) {
     const { topic, systemPrompt } = req.body;
     const userId = req.user.id;
 
+    const isGlobalSessionRequest = (id === "global");
+
     const updateData = {};
-    if (topic !== undefined) updateData.topic = topic;
-    if (systemPrompt !== undefined) updateData.systemPrompt = systemPrompt;
+    // Only allow topic update if it's not the special "global" session request
+    // and if topic is actually provided in the request body.
+    if (!isGlobalSessionRequest && topic !== undefined) {
+        updateData.topic = topic;
+    }
+    // System prompt can always be updated if provided.
+    if (systemPrompt !== undefined) {
+        updateData.systemPrompt = systemPrompt;
+    }
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ error: 'No valid fields provided for update' });
     }
 
-    // Find the session and ensure the user owns it before updating
+    let query;
+    if (isGlobalSessionRequest) {
+      query = { userId: userId, topic: USER_GLOBAL_SETTINGS_TOPIC };
+    } else {
+      // For non-global requests, 'id' is expected to be an ObjectId string.
+      // Mongoose will attempt to cast 'id' to ObjectId. If it fails (e.g., "global" or malformed),
+      // it will throw a CastError, which will be caught by the main try-catch block.
+      query = { _id: id, userId: userId };
+    }
+
     const updatedSession = await Session.findOneAndUpdate(
-      { _id: id, userId: userId }, // Match session ID and user ID
+      query,
       { $set: updateData },
-      { new: true } // Return the updated document
-    ).lean(); // Use lean for efficiency
+      { new: true, upsert: isGlobalSessionRequest }
+    ).lean();
 
     if (!updatedSession) {
-      // Check if session exists but belongs to another user
-      const exists = await Session.exists({ _id: id });
-      if (!exists) {
-        return res.status(404).json({ error: 'Session not found' });
+      if (isGlobalSessionRequest) {
+        // This means the upsert operation for the global settings session failed.
+        console.error(`Failed to upsert global session for user ${userId} with topic ${USER_GLOBAL_SETTINGS_TOPIC}. Query: ${JSON.stringify(query)}, UpdateData: ${JSON.stringify(updateData)}`);
+        return res.status(500).json({ error: 'Failed to update or create global session settings' });
       } else {
-        return res.status(403).json({ error: 'User not authorized to update this session' });
+        // For non-global requests: if session not found by query {_id: id, userId: userId}
+        // Check if the session ID itself exists to distinguish 404 vs 403.
+        // If 'id' is not a valid ObjectId string, Session.exists will throw a CastError,
+        // which will be caught by the main try-catch block.
+        const sessionExists = await Session.exists({ _id: id });
+        if (!sessionExists) {
+          return res.status(404).json({ error: 'Session not found' });
+        } else {
+          // Session exists but didn't match userId in the findOneAndUpdate query.
+          return res.status(403).json({ error: 'User not authorized to update this session' });
+        }
       }
     }
 

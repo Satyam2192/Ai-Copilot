@@ -90,10 +90,10 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
           await joinGlobalChat();
           
           // Get global chat data
-          const res = await getGlobalChat();
+          const globalChatRes = await getGlobalChat();
           
           // Transform messages to match our component's format
-          const formattedMessages = res.data.messages.map(msg => ({
+          const formattedMessages = globalChatRes.data.messages.map(msg => ({
             role: msg.role,
             content: msg.content,
             timestamp: msg.timestamp,
@@ -103,8 +103,25 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
           
           setMessages(formattedMessages || []);
           setSessionId('global'); // Use 'global' as the session ID for WebSocket
-          setSystemPrompt('');
-          setSavedSystemPrompt('');
+          
+          // Also fetch global system prompt settings
+          try {
+            const globalSettingsRes = await getSession('global');
+            if (globalSettingsRes.data && globalSettingsRes.data.systemPrompt) {
+              setSystemPrompt(globalSettingsRes.data.systemPrompt);
+              setSavedSystemPrompt(globalSettingsRes.data.systemPrompt);
+            } else {
+              setSystemPrompt('');
+              setSavedSystemPrompt('');
+            }
+          } catch (settingsErr) {
+            // If global settings are not found (e.g., 404), it's not critical for global chat messages.
+            // User can save a new one.
+            console.warn('Could not load global system prompt settings:', settingsErr.message);
+            setSystemPrompt('');
+            setSavedSystemPrompt('');
+          }
+          
           setStatus('Global chat loaded');
           
         } catch (err) {
@@ -544,13 +561,13 @@ export default function Chat({ user, onNewAiResponse, initialSessionId = null })
     }
     setError(errorMessage);
 
-    const criticalErrors = ['not-allowed', 'service-not-allowed', 'network'];
-    if (criticalErrors.includes(event.error)) {
-        console.log('Critical speech error, stopping recording state.');
+    const trulyCriticalErrors = ['not-allowed', 'service-not-allowed']; // 'network' removed
+    if (trulyCriticalErrors.includes(event.error)) {
+        console.log('Truly critical speech error (' + event.error + '), stopping recording state.');
         setIsRecording(false);
         isManuallyStoppingRef.current = true;
-    } else if (event.error === 'no-speech' || event.error === 'audio-capture') {
-        // For 'no-speech' or 'audio-capture' (which can be temporary),
+    } else if (event.error === 'network' || event.error === 'no-speech' || event.error === 'audio-capture') {
+        // For 'network', 'no-speech', or 'audio-capture' (which can be temporary),
         // allow 'onend' to attempt a restart if still in recording mode.
         // Do not change isRecording or isManuallyStoppingRef here.
         console.log(`Speech error (${event.error}), allowing 'onend' to handle potential restart.`);
